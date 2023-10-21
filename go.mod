@@ -1,3 +1,3 @@
-module github.com/lienkolabs/papirus
+module github.com/freehandle/papirus
 
 go 1.19
