@@ -310,6 +310,101 @@ func (hs *HashStore[T]) continueCloning() {
 	}()
 }
 
+func PutUint64(v uint64, data *[]byte) {
+	b := make([]byte, 8)
+	b[0] = byte(v)
+	b[1] = byte(v >> 8)
+	b[2] = byte(v >> 16)
+	b[3] = byte(v >> 24)
+	b[4] = byte(v >> 32)
+	b[5] = byte(v >> 40)
+	b[6] = byte(v >> 48)
+	b[7] = byte(v >> 56)
+	*data = append(*data, b...)
+}
+
+func ParseUint64(data []byte, position int) (uint64, int) {
+	if position+7 >= len(data) {
+		return 0, position + 8
+	}
+	value := uint64(data[position+0]) |
+		uint64(data[position+1])<<8 |
+		uint64(data[position+2])<<16 |
+		uint64(data[position+3])<<24 |
+		uint64(data[position+4])<<32 |
+		uint64(data[position+5])<<40 |
+		uint64(data[position+6])<<48 |
+		uint64(data[position+7])<<56
+	return value, position + 8
+}
+
+func (hs *HashStore[T]) Bytes() []byte {
+	size := hs.store.bytes.Size()
+	clone := NewMemoryStore(size)
+	Clone(hs.store.bytes, clone)
+
+	data := []byte{byte(hs.bitsForBucket)}
+	PutUint64(uint64(hs.store.itemBytes), &data)
+	PutUint64(uint64(hs.store.itemsPerBucket), &data)
+	PutUint64(uint64(len(hs.bitsCount)), &data)
+	for _, count := range hs.bitsCount {
+		PutUint64(uint64(count), &data)
+	}
+	PutUint64(uint64(len(hs.freeOverflows)), &data)
+	for _, overflow := range hs.freeOverflows {
+		PutUint64(uint64(overflow), &data)
+	}
+	data = append(data, clone.data...)
+	return data
+}
+
+func NewHashStoreFromClonedBytes[T Hasher](name string, byteStore ByteStore, operation QueryOperation[T], data []byte) *HashStore[T] {
+	if len(data) < 1 {
+		return nil
+	}
+	bitsForBucket := data[0]
+	hs := &HashStore[T]{
+		name:             name,
+		mask:             int64(1<<bitsForBucket - 1),
+		isReady:          true,
+		operation:        operation,
+		query:            make(chan Query[T]),
+		doubleJob:        make(chan int64),
+		Stop:             make(chan chan bool),
+		cloneJob:         make(chan int64),
+		clone:            make(chan chan bool),
+		cloned:           make(chan bool),
+		isDoubling:       false,
+		bitsTransferered: 0,
+		newHashStore:     nil,
+	}
+
+	var itemBytes, itemsPerBucket, bitsCount uint64
+	position := 1
+	itemBytes, position = ParseUint64(data, position)
+	itemsPerBucket, position = ParseUint64(data, position)
+	bitsCount, position = ParseUint64(data, position)
+	hs.bitsCount = make([]int, int(bitsCount))
+	var count uint64
+	for i := 0; i < int(bitsCount); i++ {
+		count, position = ParseUint64(data, position)
+		hs.bitsCount[i] = int(count)
+	}
+	var freeOverflows uint64
+	freeOverflows, position = ParseUint64(data, position)
+	hs.freeOverflows = make([]int64, int(freeOverflows))
+	var overflow uint64
+	for i := 0; i < int(freeOverflows); i++ {
+		overflow, position = ParseUint64(data, position)
+		hs.freeOverflows[i] = int64(overflow)
+	}
+	if len(data) > position {
+		byteStore.Append(data[position:])
+	}
+	hs.store = NewBucketStore(int64(itemBytes), int64(itemsPerBucket), byteStore)
+	return hs
+}
+
 func (hs *HashStore[T]) Clone() *HashStore[T] {
 	size := hs.store.bytes.Size()
 	cloneName := fmt.Sprintf("%v_clone_%v", hs.name, time.Now())
