@@ -363,8 +363,10 @@ func NewHashStoreFromClonedBytes[T Hasher](name string, byteStore ByteStore, ope
 		return nil
 	}
 	bitsForBucket := data[0]
+	fmt.Println("bitsForBucket", bitsForBucket)
 	hs := &HashStore[T]{
 		name:             name,
+		bitsForBucket:    int(bitsForBucket),
 		mask:             int64(1<<bitsForBucket - 1),
 		isReady:          true,
 		operation:        operation,
@@ -378,7 +380,6 @@ func NewHashStoreFromClonedBytes[T Hasher](name string, byteStore ByteStore, ope
 		bitsTransferered: 0,
 		newHashStore:     nil,
 	}
-
 	var itemBytes, itemsPerBucket, bitsCount uint64
 	position := 1
 	itemBytes, position = ParseUint64(data, position)
