@@ -174,6 +174,11 @@ func TestBuildFromBytes(t *testing.T) {
 	}
 	bytes := wallet.Bytes()
 	newWallet := NewMemoryWalletStoreFromBytes("wallet", bytes)
+	for n := 0; n < 10000; n++ {
+		token, _ := crypto.RandomAsymetricKey()
+		wallet.Credit(token, 1000)
+		newWallet.Credit(token, 1000)
+	}
 	hash := wallet.HS.Hash(crypto.Hasher)
 	newHash := newWallet.HS.Hash(crypto.Hasher)
 	if hash != newHash {
