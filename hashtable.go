@@ -143,7 +143,7 @@ func (ws *HashStore[T]) findAndOperate(q Query[T]) QueryResult {
 	bucket := wallet.store.ReadBucket(hashMask)
 	countAccounts, totalAccounts := 0, wallet.bitsCount[hashMask]
 	for {
-		for item := int64(0); item < ws.store.itemsPerBucket; item++ {
+		for item := int64(0); item < ws.store.ItemsPerBucket; item++ {
 			countAccounts += 1
 			if countAccounts > int(totalAccounts) {
 				resp := ws.operation(false, q.Hash, bucket, item, q.Param)
@@ -167,7 +167,7 @@ func (ws *HashStore[T]) findAndOperate(q Query[T]) QueryResult {
 func (ws *HashStore[T]) ProcessMutation(hashMask int64, added *Item, deleted *Item, count int) {
 	if added != nil {
 		ws.bitsCount[hashMask] += 1
-		if added.Item == ws.store.itemsPerBucket-1 {
+		if added.Item == ws.store.ItemsPerBucket-1 {
 			if len(ws.freeOverflows) > 0 {
 				added.Bucket.WriteOverflow(ws.freeOverflows[0])
 				ws.freeOverflows = ws.freeOverflows[1:]
@@ -183,7 +183,7 @@ func (ws *HashStore[T]) ProcessMutation(hashMask int64, added *Item, deleted *It
 		lastItem := ws.bitsCount[hashMask] - 1
 		ws.bitsCount[hashMask] -= 1
 		if count == lastItem {
-			deleted.Bucket.WriteItem(deleted.Item, make([]byte, ws.store.itemBytes))
+			deleted.Bucket.WriteItem(deleted.Item, make([]byte, ws.store.ItemBytes))
 			return
 		}
 		var previousBucket *Bucket
@@ -193,10 +193,10 @@ func (ws *HashStore[T]) ProcessMutation(hashMask int64, added *Item, deleted *It
 				previousBucket = lastBucket
 				lastBucket = nextBucket
 			} else {
-				item := lastItem % int(ws.store.itemsPerBucket)
-				lastBucket.WriteItem(int64(item), make([]byte, ws.store.itemBytes))
+				item := lastItem % int(ws.store.ItemsPerBucket)
+				lastBucket.WriteItem(int64(item), make([]byte, ws.store.ItemBytes))
 				if item == 0 && previousBucket != nil {
-					ws.freeOverflows = append(ws.freeOverflows, lastBucket.n)
+					ws.freeOverflows = append(ws.freeOverflows, lastBucket.N)
 					previousBucket.WriteOverflow(0)
 				}
 				break
@@ -226,9 +226,9 @@ func (w *HashStore[T]) transferBuckets(starting, N int64) {
 			}
 		}
 		// put lBit and hBit items in new wallter
-		w.newHashStore.bitsCount[bucket] = len(lBitBucket) / int(w.store.itemBytes)
+		w.newHashStore.bitsCount[bucket] = len(lBitBucket) / int(w.store.ItemBytes)
 		w.newHashStore.store.ReadBucket(bucket).WriteBulk(lBitBucket)
-		w.newHashStore.bitsCount[bucket+int64(highBit)] = len(hBitBucket) / int(w.store.itemBytes)
+		w.newHashStore.bitsCount[bucket+int64(highBit)] = len(hBitBucket) / int(w.store.ItemBytes)
 		w.newHashStore.store.ReadBucket(bucket + int64(highBit)).WriteBulk(hBitBucket)
 	}
 	w.bitsTransferered = starting + N - 1
@@ -270,7 +270,7 @@ func (w *HashStore[T]) startDuplication() {
 	newByteStore := w.store.bytes.New(newStoreSize)
 	header := w.store.bytes.ReadAt(0, w.store.headerBytes)
 	newByteStore.WriteAt(0, header)
-	newBucketStore := NewBucketStore(w.store.itemBytes, w.store.itemsPerBucket, newByteStore)
+	newBucketStore := NewBucketStore(w.store.ItemBytes, w.store.ItemsPerBucket, newByteStore)
 	w.newHashStore = NewHashStore(w.name, newBucketStore, int(newStoreBitsForBucket), w.operation)
 	w.newHashStore.isReady = false
 	w.bitsTransferered = 0
@@ -344,8 +344,8 @@ func (hs *HashStore[T]) Bytes() []byte {
 	Clone(hs.store.bytes, clone)
 
 	data := []byte{byte(hs.bitsForBucket)}
-	PutUint64(uint64(hs.store.itemBytes), &data)
-	PutUint64(uint64(hs.store.itemsPerBucket), &data)
+	PutUint64(uint64(hs.store.ItemBytes), &data)
+	PutUint64(uint64(hs.store.ItemsPerBucket), &data)
 	PutUint64(uint64(len(hs.bitsCount)), &data)
 	for _, count := range hs.bitsCount {
 		PutUint64(uint64(count), &data)
@@ -411,7 +411,7 @@ func (hs *HashStore[T]) Clone() *HashStore[T] {
 	//clone := NewFileStore(fmt.Sprintf("%v.dat", cloneName), size)
 	clone := NewMemoryStore(size)
 	Clone(hs.store.bytes, clone)
-	bs := NewBucketStore(hs.store.itemBytes, hs.store.itemsPerBucket, clone)
+	bs := NewBucketStore(hs.store.ItemBytes, hs.store.ItemsPerBucket, clone)
 	nhs := NewHashStore[T](cloneName, bs, hs.bitsForBucket, hs.operation)
 	nhs.bitsCount = make([]int, len(hs.bitsCount))
 	copy(nhs.bitsCount, hs.bitsCount)
@@ -466,7 +466,7 @@ func (ia itemsArray) Swap(i, j int) {
 // / these groups. The final hash is the hash of all hashes.
 func (hs *HashStore[T]) Hash(HashFunction func([]byte) T) T {
 	hasharray := make([]byte, 0)
-	hashBlock := 256 * 256 * 16 * hs.store.itemBytes
+	hashBlock := 256 * 256 * 16 * hs.store.ItemBytes
 	bucketCollection := make([]byte, 0, hashBlock)
 	for n := int64(0); n < 1<<hs.bitsForBucket; n++ {
 		buckets := itemsArray(hs.store.ReadBucket(n).ReadBulk(int64(hs.bitsCount[n])))
